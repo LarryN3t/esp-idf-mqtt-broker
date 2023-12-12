@@ -50,6 +50,7 @@ static const char *TAG = "MAIN";
 
 char *MOUNT_POINT = "/root";
 
+
 static void event_handler(void* arg, esp_event_base_t event_base, 
 								int32_t event_id, void* event_data)
 {
@@ -329,6 +330,7 @@ void app_main()
 	char cparam1[64];
 	//sprintf(cparam1, "mqtt://%s:1883", ip4addr_ntoa(&ip_info.ip));
 	sprintf(cparam1, "mqtt://" IPSTR ":1883", IP2STR(&ip_info.ip));
+    //sprintf(cparam1, "mqtt://collector.mielediorso.it:2783");	
 	xTaskCreate(mqtt_subscriber, "SUBSCRIBE", 1024*4, (void *)cparam1, 2, NULL);
 	vTaskDelay(10);	// You need to wait until the task launch is complete.
 #endif
@@ -337,7 +339,8 @@ void app_main()
 	/* Start Publisher */
 	char cparam2[64];
 	//sprintf(cparam2, "mqtt://%s:1883", ip4addr_ntoa(&ip_info.ip));
-	sprintf(cparam2, "mqtt://" IPSTR ":1883", IP2STR(&ip_info.ip));
+	////sprintf(cparam2, "mqtt://" IPSTR ":1883", IP2STR(&ip_info.ip));
+	sprintf(cparam2, "mqtt://collector.mielediorso.it:2783");
 	xTaskCreate(mqtt_publisher, "PUBLISH", 1024*4, (void *)cparam2, 2, NULL);
 	vTaskDelay(10);	// You need to wait until the task launch is complete.
 #endif

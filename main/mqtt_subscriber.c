@@ -20,8 +20,9 @@
 
 #if CONFIG_SUBSCRIBE
 
-static const char *sub_topic = "#";
+static const char *sub_topic = "beefarm/collector/#";
 static const char *will_topic = "WILL";
+struct mg_connection *mgc1;
 
 static EventGroupHandle_t s_wifi_event_group;
 /* The event group allows multiple bits for each event, but we only care about one event
@@ -45,25 +46,30 @@ static void fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 	// MQTT connect is successful
 	ESP_LOGI(pcTaskGetName(NULL), "CONNECTED to %s", (char *)fn_data);
 	xEventGroupSetBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
-
+/*
 #if 0
 	struct mg_str topic = mg_str(sub_topic);
 	struct mg_str data = mg_str("hello");
 	mg_mqtt_sub(c, &topic, 1);
 	ESP_LOGI(pcTaskGetName(NULL), "SUBSCRIBED to %.*s", (int) topic.len, topic.ptr);
 #endif
-
+*/
+/*
 #if 0
 	mg_mqtt_pub(c, &topic, &data);
 	LOG(LL_INFO, ("PUBSLISHED %.*s -> %.*s", (int) data.len, data.ptr,
 				  (int) topic.len, topic.ptr));
 #endif
-
+*/
   } else if (ev == MG_EV_MQTT_MSG) {
 	// When we get echo response, print it
 	struct mg_mqtt_message *mm = (struct mg_mqtt_message *) ev_data;
 	ESP_LOGI(pcTaskGetName(NULL), "RECEIVED %.*s <- %.*s", (int) mm->data.len, mm->data.ptr,
 				  (int) mm->topic.len, mm->topic.ptr);
+	mg_mqtt_pub(mgc1, mm->topic, mm->data,1,true);
+	ESP_LOGI(pcTaskGetName(NULL), "PUBLISHED %.*s -> %.*s", (int) mm->data.len, mm->data.ptr,
+				  (int) mm->topic.len, mm->topic.ptr);
+
   }
 
 #if 0
@@ -73,6 +79,38 @@ static void fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 #endif
 }
 
+static void fnp(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
+  if (ev == MG_EV_ERROR) {
+	// On error, log error message
+	ESP_LOGE(pcTaskGetName(NULL), "MG_EV_ERROR %p %s", c->fd, (char *) ev_data);
+	xEventGroupClearBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
+  } else if (ev == MG_EV_CONNECT) {
+	ESP_LOGI(pcTaskGetName(NULL), "MG_EV_CONNECT PUBLISHER");
+	// If target URL is SSL/TLS, command client connection to use TLS
+	if (mg_url_is_ssl((char *)fn_data)) {
+	  struct mg_tls_opts opts = {.ca = "ca.pem"};
+	  mg_tls_init(c, &opts);
+	}
+  } else if (ev == MG_EV_MQTT_OPEN) {
+	ESP_LOGI(pcTaskGetName(NULL), "MG_EV_OPEN PUBLISHER");
+	// MQTT connect is successful
+	ESP_LOGI(pcTaskGetName(NULL), "CONNECTED PUBLISHER to %s", (char *)fn_data);
+	//xEventGroupSetBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
+
+  } else if (ev == MG_EV_MQTT_MSG) {
+	// When we get echo response, print it
+	struct mg_mqtt_message *mm = (struct mg_mqtt_message *) ev_data;
+	//ESP_LOGI(pcTaskGetName(NULL), "PUBLISHEDD %.*s -> %.*s", (int) mm->data.len, mm->data.ptr,
+	//			  (int) mm->topic.len, mm->topic.ptr);
+
+  }
+
+#if 0
+  if (ev == MG_EV_ERROR || ev == MG_EV_CLOSE || ev == MG_EV_MQTT_MSG) {
+	*(bool *) fn_data = true;  // Signal that we're done
+  }
+#endif
+}
 
 
 void mqtt_subscriber(void *pvParameters)
@@ -91,20 +129,34 @@ void mqtt_subscriber(void *pvParameters)
 	memset(&opts, 0, sizeof(opts));					// Set MQTT options
 	//opts.client_id = mg_str("SUB");				// Set Client ID
 	opts.client_id = mg_str(pcTaskGetName(NULL));	// Set Client ID
-	//opts.qos = 1;									// Set QoS to 1
 	//for Ver7.6
 	opts.will_qos = 1;									// Set QoS to 1
 	opts.will_topic = mg_str(will_topic);			// Set last will topic
 	opts.will_message = mg_str("goodbye");			// And last will message
-
-	// Connect address is x.x.x.x:1883
-	// 0.0.0.0:1883 not work
 	ESP_LOGD(pcTaskGetName(NULL), "url=[%s]", url);
-	//static const char *url = "mqtt://broker.hivemq.com:1883";
-	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
-	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
 	struct mg_connection *mgc;
 	mgc = mg_mqtt_connect(&mgr, url, &opts, fn, &url);	// Create client connection
+	/*end Sbscriber setup*/
+
+	/*Publisher Setup*/
+	struct mg_mgr mgr1;
+	struct mg_mqtt_opts opts1;  // MQTT connection options
+	//bool done = false;		 // Event handler flips it to true when done
+	mg_mgr_init(&mgr1);		   // Initialise event manager
+	memset(&opts1, 0, sizeof(opts1));					// Set MQTT options
+	//opts.client_id = mg_str("SUB");				// Set Client ID
+	opts1.client_id = mg_str("Brocker TCALL");	// Set Client ID
+	opts1.user = mg_str("balance");				// Set Client ID
+	opts1.pass = mg_str("b4l4nc3!");				// Set Client ID
+	//opts.qos = 1;									// Set QoS to 1
+	//for Ver7.6
+ 	opts1.will_qos = 1;									// Set QoS to 1
+	opts1.will_topic = mg_str(will_topic);			// Set last will topic
+	opts1.will_message = mg_str("goodbye");			// And last will message
+	static const char *url1 = "mqtt://collector.mielediorso.it:2783";
+	ESP_LOGD(pcTaskGetName(NULL), "url1=[%s]", url1);
+	mgc1 = mg_mqtt_connect(&mgr1, url1, &opts1, fnp, &url1);	// Create client connection
+	/*End Publisher Setup*/
 
 	/* Processing events */
 	s_wifi_event_group = xEventGroupCreate();
@@ -125,11 +177,13 @@ void mqtt_subscriber(void *pvParameters)
 			ESP_LOGI(pcTaskGetName(NULL), "SUBSCRIBED to %.*s", (int) topic.len, topic.ptr);
 		}
 		mg_mgr_poll(&mgr, 0);
+		mg_mgr_poll(&mgr1, 0);
 		vTaskDelay(1);
 	}
 
 	// Never reach here
 	ESP_LOGI(pcTaskGetName(NULL), "finish");
 	mg_mgr_free(&mgr);								// Finished, cleanup
+	mg_mgr_free(&mgr1);		
 }
 #endif

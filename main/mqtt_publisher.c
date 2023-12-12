@@ -18,12 +18,14 @@
 
 #include "mongoose.h"
 
+char payload[64] = "vivo sono";
+
 #if CONFIG_PUBLISH
 
 #if 0
 static const char *sub_topic = "#";
 #endif
-static const char *pub_topic = "esp32";
+static const char *pub_topic = "#";
 static const char *will_topic = "WILL";
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -77,7 +79,61 @@ static void fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 #endif
 }
 
+void mqtt_ppublisher(void *stopic, void *ppayload)
+{
+	
+	char url[64]="mqtt://collector.mielediorso.it:2783";
+	ESP_LOGI(pcTaskGetName(NULL), "started on %s", url);
 
+	/* Starting Publisher */
+	struct mg_mgr mgr;
+	struct mg_mqtt_opts opts;  // MQTT connection options
+	mg_mgr_init(&mgr);		   // Initialise event manager
+	memset(&opts, 0, sizeof(opts));					// Set MQTT options
+	opts.user = mg_str("balance");				// Set Username
+	opts.pass = mg_str("b4l4nc3!");				// Set Password
+	opts.client_id = mg_str(pcTaskGetName(NULL));   // Set Client ID
+	//opts.qos = 1;									// Set QoS to 1
+	//for Ver7.6
+	opts.will_qos = 1;									// Set QoS to 1
+	opts.will_topic = mg_str(will_topic);			// Set last will topic
+	opts.will_message = mg_str("goodbye");			// And last will message
+
+
+	ESP_LOGD(pcTaskGetName(NULL), "url=[%s]", url);
+	struct mg_connection *mgc;
+	mgc = mg_mqtt_connect(&mgr, url, &opts, fn, &url);	// Create client connection
+
+	/* Processing events */
+	s_wifi_event_group = xEventGroupCreate();
+	int32_t counter = 0;
+
+	while (counter == 0) {
+		EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+			MQTT_CONNECTED_BIT,
+			pdFALSE,
+			pdTRUE,
+			0);
+		ESP_LOGD(pcTaskGetName(NULL), "bits=0x%"PRIx32, bits);
+		if ((bits & MQTT_CONNECTED_BIT) != 0) {
+				counter=0;
+				struct mg_str data = mg_str(ppayload);
+				struct mg_str topic = mg_str(stopic);
+				//mg_mqtt_pub(mgc, &topic, &data);
+				//mg_mqtt_pub(mgc, &topic, &data, 1, false);
+				//for Ver7.6
+				mg_mqtt_pub(mgc, topic, data, 1, false);
+				ESP_LOGI(pcTaskGetName(NULL), "PUBSLISHED %.*s -> %.*s", (int) data.len, data.ptr,
+				  (int) topic.len, topic.ptr);
+			
+		}
+		mg_mgr_poll(&mgr, 0);
+		vTaskDelay(1);
+	}
+
+	// Never reach here
+	mg_mgr_free(&mgr);								// Finished, cleanup
+}
 
 void mqtt_publisher(void *pvParameters)
 {
@@ -93,7 +149,8 @@ void mqtt_publisher(void *pvParameters)
 	//bool done = false;		 // Event handler flips it to true when done
 	mg_mgr_init(&mgr);		   // Initialise event manager
 	memset(&opts, 0, sizeof(opts));					// Set MQTT options
-	//opts.client_id = mg_str("PUB");				// Set Client ID
+	opts.user = mg_str("balance");				// Set Client ID
+	opts.pass = mg_str("b4l4nc3!");				// Set Client ID
 	opts.client_id = mg_str(pcTaskGetName(NULL));   // Set Client ID
 	//opts.qos = 1;									// Set QoS to 1
 	//for Ver7.6
@@ -104,7 +161,7 @@ void mqtt_publisher(void *pvParameters)
 	// Connect address is x.x.x.x:1883
 	// 0.0.0.0:1883 not work
 	ESP_LOGD(pcTaskGetName(NULL), "url=[%s]", url);
-	//static const char *url = "mqtt://broker.hivemq.com:1883";
+	//sprintf(url,"mqtt://balance:b4l4nc3!@:2783");
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &url);	// Create client connection
@@ -125,10 +182,10 @@ void mqtt_publisher(void *pvParameters)
 		ESP_LOGD(pcTaskGetName(NULL), "bits=0x%"PRIx32, bits);
 		if ((bits & MQTT_CONNECTED_BIT) != 0) {
 			counter++;
-			if (counter > 100) {
+			if (counter > 10000) {
 				counter=0;
-				char payload[64];
-				sprintf(payload, "TickCount=%"PRIu32, xTaskGetTickCount());
+				//char payload[64];
+				//printf(payload, "count=%"PRIu32, xTaskGetTickCount());
 				struct mg_str data = mg_str(payload);
 				//mg_mqtt_pub(mgc, &topic, &data);
 				//mg_mqtt_pub(mgc, &topic, &data, 1, false);
