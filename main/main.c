@@ -20,14 +20,30 @@
 #include "nvs_flash.h"
 #include "esp_vfs_fat.h"
 #include "mdns.h"
+#include "network_dce.h"
 
 #include "lwip/dns.h"
 
 #include "mongoose.h"
 
+
+
+#include "esp_system.h"
+#include "esp_idf_version.h"
+#include "lwip/netif.h"
+#include "lwip/lwip_napt.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+	#include "esp_mac.h"
+	#include "dhcpserver/dhcpserver.h"
+#endif
+
+static EventGroupHandle_t event_group = NULL;
+static const int CONNECT_BIT = BIT0;
+static const int DISCONNECT_BIT = BIT1;
+
 #if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0))
-#define esp_vfs_fat_spiflash_mount esp_vfs_fat_spiflash_mount_rw_wl
-#define esp_vfs_fat_spiflash_unmount esp_vfs_fat_spiflash_unmount_rw_wl
+	#define esp_vfs_fat_spiflash_mount esp_vfs_fat_spiflash_mount_rw_wl
+	#define esp_vfs_fat_spiflash_unmount esp_vfs_fat_spiflash_unmount_rw_wl
 #endif
 
 /* This project use WiFi configuration that you can set via 'make menuconfig'.
@@ -251,6 +267,7 @@ void http_server(void *pvParameters);
 void mqtt_subscriber(void *pvParameters);
 void mqtt_publisher(void *pvParameters);
 
+
 wl_handle_t mountFATFS(char * partition_label, char * mount_point) {
 	ESP_LOGI(TAG, "Initializing FAT file system");
 	// To mount device we need name of device partition, define base_path
@@ -271,6 +288,37 @@ wl_handle_t mountFATFS(char * partition_label, char * mount_point) {
 	return s_wl_handle;
 }
 
+static void on_ip_event(void *arg, esp_event_base_t event_base,
+                        int32_t event_id, void *event_data)
+{
+    ESP_LOGD(TAG, "IP event! %" PRId32, event_id);
+    if (event_id == IP_EVENT_PPP_GOT_IP) {
+        esp_netif_dns_info_t dns_info;
+        ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
+        esp_netif_t *netif = event->esp_netif;
+
+        ESP_LOGI(TAG, "Modem Connect to PPP Server");
+        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
+        ESP_LOGI(TAG, "IP          : " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Netmask     : " IPSTR, IP2STR(&event->ip_info.netmask));
+        ESP_LOGI(TAG, "Gateway     : " IPSTR, IP2STR(&event->ip_info.gw));
+        esp_netif_get_dns_info(netif, 0, &dns_info);
+        ESP_LOGI(TAG, "Name Server1: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
+        esp_netif_get_dns_info(netif, 1, &dns_info);
+        ESP_LOGI(TAG, "Name Server2: " IPSTR, IP2STR(&dns_info.ip.u_addr.ip4));
+        ESP_LOGI(TAG, "~~~~~~~~~~~~~~");
+        xEventGroupSetBits(event_group, CONNECT_BIT);
+
+        ESP_LOGI(TAG, "GOT ip event!!!");
+    } else if (event_id == IP_EVENT_PPP_LOST_IP) {
+        ESP_LOGI(TAG, "Modem Disconnect from PPP Server");
+        xEventGroupSetBits(event_group, DISCONNECT_BIT);
+    } else if (event_id == IP_EVENT_GOT_IP6) {
+        ESP_LOGI(TAG, "GOT IPv6 event!");
+        ip_event_got_ip6_t *event = (ip_event_got_ip6_t *)event_data;
+        ESP_LOGI(TAG, "Got IPv6 address " IPV6STR, IPV62STR(event->ip6_info.ip));
+    }
+}
 
 void app_main()
 {
@@ -281,6 +329,15 @@ void app_main()
 		ret = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK(ret);
+
+    esp_netif_config_t ppp_netif_config = ESP_NETIF_DEFAULT_PPP();
+    esp_netif_t *ppp_netif = esp_netif_new(&ppp_netif_config);
+    assert(ppp_netif);
+
+    // Initialize the PPP network and register for IP event
+    ESP_ERROR_CHECK(modem_init_network(ppp_netif));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, ESP_EVENT_ANY_ID, on_ip_event, NULL));
+	vTaskDelay(pdMS_TO_TICKS(20000));
 	
 #if CONFIG_AP_MODE
 	ESP_LOGI(TAG, "ESP_WIFI_MODE_AP");
@@ -318,7 +375,7 @@ void app_main()
 		ESP_LOGE(TAG, "mountFATFS fail");
 		while(1) { vTaskDelay(1); }
 	}
-
+	
 	/* Start MQTT Server using tcp transport */
 	//ESP_LOGI(TAG, "MQTT broker started on %s using Mongoose v%s", ip4addr_ntoa(&ip_info.ip), MG_VERSION);
 	ESP_LOGI(TAG, "MQTT broker started on " IPSTR " using Mongoose v%s", IP2STR(&ip_info.ip), MG_VERSION);
@@ -330,7 +387,6 @@ void app_main()
 	char cparam1[64];
 	//sprintf(cparam1, "mqtt://%s:1883", ip4addr_ntoa(&ip_info.ip));
 	sprintf(cparam1, "mqtt://" IPSTR ":1883", IP2STR(&ip_info.ip));
-    //sprintf(cparam1, "mqtt://collector.mielediorso.it:2783");	
 	xTaskCreate(mqtt_subscriber, "SUBSCRIBE", 1024*4, (void *)cparam1, 2, NULL);
 	vTaskDelay(10);	// You need to wait until the task launch is complete.
 #endif
@@ -340,7 +396,7 @@ void app_main()
 	char cparam2[64];
 	//sprintf(cparam2, "mqtt://%s:1883", ip4addr_ntoa(&ip_info.ip));
 	////sprintf(cparam2, "mqtt://" IPSTR ":1883", IP2STR(&ip_info.ip));
-	sprintf(cparam2, "mqtt://collector.mielediorso.it:2783");
+	sprintf(cparam2, EXAMPLE_MQTT_BROKER_URI);
 	xTaskCreate(mqtt_publisher, "PUBLISH", 1024*4, (void *)cparam2, 2, NULL);
 	vTaskDelay(10);	// You need to wait until the task launch is complete.
 #endif

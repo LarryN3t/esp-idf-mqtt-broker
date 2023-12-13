@@ -17,6 +17,10 @@
 #include "esp_log.h"
 
 #include "mongoose.h"
+#define MQTT_USERNAME CONFIG_EXAMPLE_MQTT_USERNAME
+#define MQTT_PASSWORD CONFIG_EXAMPLE_MQTT_PASSWORD
+#define MQTT_BROKER_URI CONFIG_EXAMPLE_MQTT_BROKER_URI
+
 
 #if CONFIG_SUBSCRIBE
 
@@ -99,7 +103,7 @@ static void fnp(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 
   } else if (ev == MG_EV_MQTT_MSG) {
 	// When we get echo response, print it
-	struct mg_mqtt_message *mm = (struct mg_mqtt_message *) ev_data;
+	//struct mg_mqtt_message *mm = (struct mg_mqtt_message *) ev_data;
 	//ESP_LOGI(pcTaskGetName(NULL), "PUBLISHEDD %.*s -> %.*s", (int) mm->data.len, mm->data.ptr,
 	//			  (int) mm->topic.len, mm->topic.ptr);
 
@@ -146,14 +150,14 @@ void mqtt_subscriber(void *pvParameters)
 	memset(&opts1, 0, sizeof(opts1));					// Set MQTT options
 	//opts.client_id = mg_str("SUB");				// Set Client ID
 	opts1.client_id = mg_str("Brocker TCALL");	// Set Client ID
-	opts1.user = mg_str("balance");				// Set Client ID
-	opts1.pass = mg_str("b4l4nc3!");				// Set Client ID
+	opts1.user = mg_str(MQTT_USERNAME);				// Set Client ID
+	opts1.pass = mg_str(MQTT_PASSWORD);				// Set Client ID
 	//opts.qos = 1;									// Set QoS to 1
 	//for Ver7.6
  	opts1.will_qos = 1;									// Set QoS to 1
 	opts1.will_topic = mg_str(will_topic);			// Set last will topic
 	opts1.will_message = mg_str("goodbye");			// And last will message
-	static const char *url1 = "mqtt://collector.mielediorso.it:2783";
+	static const char *url1 = MQTT_BROKER_URI;
 	ESP_LOGD(pcTaskGetName(NULL), "url1=[%s]", url1);
 	mgc1 = mg_mqtt_connect(&mgr1, url1, &opts1, fnp, &url1);	// Create client connection
 	/*End Publisher Setup*/

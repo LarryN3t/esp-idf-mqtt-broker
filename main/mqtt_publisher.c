@@ -19,6 +19,9 @@
 #include "mongoose.h"
 
 char payload[64] = "vivo sono";
+#define MQTT_USERNAME EXAMPLE_MQTT_USERNAME
+#define MQTT_PASSWORD EXAMPLE_MQTT_PASSWORD
+#define MQTT_BROKER_URI CONFIG_EXAMPLE_MQTT_BROKER_URI
 
 #if CONFIG_PUBLISH
 
@@ -82,7 +85,7 @@ static void fn(struct mg_connection *c, int ev, void *ev_data, void *fn_data) {
 void mqtt_ppublisher(void *stopic, void *ppayload)
 {
 	
-	char url[64]="mqtt://collector.mielediorso.it:2783";
+	char url[64]=MQTT_BROKER_URI;
 	ESP_LOGI(pcTaskGetName(NULL), "started on %s", url);
 
 	/* Starting Publisher */
@@ -90,8 +93,8 @@ void mqtt_ppublisher(void *stopic, void *ppayload)
 	struct mg_mqtt_opts opts;  // MQTT connection options
 	mg_mgr_init(&mgr);		   // Initialise event manager
 	memset(&opts, 0, sizeof(opts));					// Set MQTT options
-	opts.user = mg_str("balance");				// Set Username
-	opts.pass = mg_str("b4l4nc3!");				// Set Password
+	opts.user = mg_str(MQTT_USERNAME);				// Set Username
+	opts.pass = mg_str(MQTT_PASSWORD);				// Set Password
 	opts.client_id = mg_str(pcTaskGetName(NULL));   // Set Client ID
 	//opts.qos = 1;									// Set QoS to 1
 	//for Ver7.6
@@ -149,8 +152,8 @@ void mqtt_publisher(void *pvParameters)
 	//bool done = false;		 // Event handler flips it to true when done
 	mg_mgr_init(&mgr);		   // Initialise event manager
 	memset(&opts, 0, sizeof(opts));					// Set MQTT options
-	opts.user = mg_str("balance");				// Set Client ID
-	opts.pass = mg_str("b4l4nc3!");				// Set Client ID
+	opts.user = mg_str(MQTT_USERNAME);				// Set Client ID
+	opts.pass = mg_str(MQTT_PASSWORD);				// Set Client ID
 	opts.client_id = mg_str(pcTaskGetName(NULL));   // Set Client ID
 	//opts.qos = 1;									// Set QoS to 1
 	//for Ver7.6
@@ -161,7 +164,6 @@ void mqtt_publisher(void *pvParameters)
 	// Connect address is x.x.x.x:1883
 	// 0.0.0.0:1883 not work
 	ESP_LOGD(pcTaskGetName(NULL), "url=[%s]", url);
-	//sprintf(url,"mqtt://balance:b4l4nc3!@:2783");
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &done);  // Create client connection
 	//mg_mqtt_connect(&mgr, url, &opts, fn, &url);	// Create client connection
